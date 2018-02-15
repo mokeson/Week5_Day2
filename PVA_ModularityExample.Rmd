@@ -1,0 +1,810 @@
+---
+title: "Biol 801/Evrn 420/720, Population viability modelling modularity example - basic lessons in modularity"
+date: "February 13, 2018"
+output: 
+  pdf_document:
+    highlight: tango
+fontsize: 11pt
+geometry: margin=1in
+
+documentclass: article
+---
+
+```{r echo=F}
+set.seed(101)
+```
+
+This document illustrates the importance of writing modular code by giving an example of the price you pay by not being modular. The example is made up, but realistic, and (hopefully) informative.
+
+# Introduction to the problem
+
+Suppose you have a friend who is in charge of managing a critically endangered salamander species that only has one population, occuring in and around a single lake. He knows all about the salamander and its habitat, and knows something about population modelling, but cannot program a computer. Suppose he tells you he knows the current population of the salamander is $52$ individuals, and he thinks the model
+$$p_{t+1}=p_t \exp \left( r\left(1- \frac{p_t}{K} \right) +\epsilon_t \right)$$
+is a good model for the species' population dynamics in this lake, where $t$ is time in years, and using $r=1.01$ and $K=60$ and where the $\epsilon_t$ are average winter temperatures, which can be considered to be independently normally distributed numbers with mean $0$ and standard deviation $2$.
+
+# First attempt
+
+Q1) He wants to know the chances the salamander will go extinct within $25$ years ($p_{25}<1$).
+
+How about we simulate the population 1000 times and see what fraction of the simulations go extinct within $25$ years? This is called population viability analysis (PVA) and it is a big thing. Even the IUCN red list criteria include an option of getting a species red-listed by doing a PVA.
+
+```{r}
+numextinct<-0
+for (scounter in 1:100)#count through the simulations
+{
+  pop<-52
+  for (tcounter in 1:25)#go through the time steps
+  {
+    pop<-pop*exp(1.01*(1-pop/60)+rnorm(1,0,2))
+    if (pop<1){pop<-0}
+  }
+  if (pop==0){numextinct<-numextinct+1}
+}
+numextinct/100
+```
+
+You show your friend this result and he says "I may not know anything about computer programming but I have read a lot of papers on PVA, and I know 100 simulations is not enough to accurately estimate extinction risk, can you please increase this to 10000?"
+
+# Second attempt, and modularity lesson 1
+
+You say "OK, I'll make the change."
+
+```{r}
+numextinct<-0
+for (scounter in 1:10000)#simulations
+{
+  pop<-52
+  for (tcounter in 1:25)#time steps
+  {
+    pop<-pop*exp(1.01*(1-pop/60)+rnorm(1,0,2))
+    if (pop<1){pop<-0}
+  }
+  if (pop==0){numextinct<-numextinct+1}
+}
+numextinct/100
+```
+
+You show this to your friend and he says "Are you stupid or something?" (He is that kind of friend.) "How can an extinction risk be `r numextinct/100`? Shouldn't it be a fraction? Even I can tell there must be a bug in your code." 
+
+What is the problem?
+
+_Modularity lesson 1:_ Do not type constants into your code, give them variable names and use those names in the code instead.
+
+Why? Because if you have to change one, you want to change it in one place only. Why is this modularity? Modularity means one part of the code is responsible for one task, and it interfaces in defined and controlled ways with other parts of the code. If you put the same constant in several places in your code, then all those places are serving duplicate (and possibly conflicting) functions - not modular.
+
+What other numbers should be replaced with variables?
+
+But we won't fix this yet, we want to see how bad things can get when we fail to implement modularity in this and other ways. We'll just change the other 100s to 10000s so the code is techically correct (but not stylistically correct) and blunder on.
+
+```{r}
+numextinct<-0
+for (scounter in 1:10000)#simulations
+{
+  pop<-52
+  for (tcounter in 1:25)#time steps
+  {
+    pop<-pop*exp(1.01*(1-pop/60)+rnorm(1,0,2))
+    if (pop<1){pop<-0}
+  }
+  if (pop==0){numextinct<-numextinct+1}
+}
+numextinct/10000
+```
+
+# Third attempt, and modularity lesson 2
+
+Now your friend says: 
+
+"Q2) OK, this makes sense, but can I please have a plot illustrating this? I need a visual to show to the land owner to convince them to do something."
+
+You say "Darn, I can see I cannot easily modify my code to do that." (Why not?) "I am going to have to rewrite my code, so I cannot go out with my friends tonight, I have to stay in and rewrite. Hmm, I wonder if there was a way I could have done things better from the beginning so I would not have to re-engineer my code now?"
+
+The problem relates to something called "extensibility" which relates to modularity. Extensibility means, within reason, you want to try to plan for possible additional functionality you might later want to add (extensions). Not keeping the whole time series of populations, as in the previous code, means you cannot plot. If you think a bit before you code about what you want to accomplish and what, beyond that, you might later want, you are more likely to produce extensible code, i.e., code that it is easy to add functionality to later if needed. This will save time in the long run. Plots are standard. It should have been easy to anticipate that you would want some plots, and so ought to have been easy to recognize you should keep the populations for entire runs instead of just storing the current population as it progresses.
+
+_Modularity lesson 2:_ Think a bit about what your goals are for code functionality and what they may be in the future - what more might you want to do later? Is your code design such that it will be easy to add that functionality later, or will it take an entire rewrite?
+
+Once you rewrite your code it looks like this (below). Now each time a simulation is run you keep the whole time series long enough to plot it.
+
+```{r}
+numextinct<-0
+plot(c(0,25),c(0,300),type='n',
+     xlab="time step (yr)",ylab="populations")
+for (scounter in 1:10000)#simulations
+{
+  #do one sim
+  pops<-c(52,rep(NA,25))
+  for (tcounter in 1:25)#time steps
+  {
+    pops[tcounter+1]<-
+      pops[tcounter]*
+      exp(1.01*(1-pops[tcounter]/60)+
+            rnorm(1,0,2))
+    if (pops[tcounter+1]<1){pops[tcounter+1]<-0}
+  }
+  
+  #judge extinctions
+  if (pops[26]==0){numextinct<-numextinct+1}
+  
+  #plot this sim
+  lines(0:25,pops,type='l')
+}
+numextinct/10000
+```
+
+Your friend says "This confirms you are stupid. This looks like a plate of spaghetti. I cannot show this to the land owner. If I do they will assume I do not know what I am talking about and stop listening." 
+
+"Q3) Can you just plot the first 100 simulations but still use all 10000 to calculate risk, and do the plot on the log scale?"
+
+```{r}
+numextinct<-0
+plot(c(0,25),c(0,300),type='n',
+     xlab="time step (yr)",ylab="populations")
+for (scounter in 1:10000)#simulations
+{
+  #do one sim
+  pops<-c(52,rep(NA,25))
+  for (tcounter in 1:25)#time steps
+  {
+    pops[tcounter+1]<-
+      pops[tcounter]*
+      exp(1.01*(1-pops[tcounter]/60)+
+            rnorm(1,0,2))
+    if (pops[tcounter+1]<1){pops[tcounter+1]<-0}
+  }
+  
+  #judge extinctions
+  if (pops[26]==0){numextinct<-numextinct+1}
+  
+  #plot this sim
+  if (scounter<=100)
+  {
+    lines(0:25,pops,type='l')
+  }
+}
+numextinct/10000
+```
+
+The output is better looking, but you are now starting to recognize this is increasingly awful, kludge-filled code. This is what you get when you do not think about extensibility and modularity. 
+
+# Getting despirited, and modularity lesson 3
+
+You are embarrassed to show the latest batch of code above to your friend. But he does not notice because he does not know how to code. Your friend gets excited when he sees the output and starts to ask a bunch of additional questions:
+
+"Q4) You told me the extinction risk at 25 years, but what is it at 10, 15, 20 years? Can you make a plot for me showing extinction risk as a function of number of years in the future?"
+
+"Q5) What would happen if, 5 years from now, I can get the land owners to agree to stop letting fertilizer spill into the pond, I think that will make $r$ go to $1.03$ from that point forward."
+
+"Q6) What if I can gradually get them to reduce their fertilizer use every 5 years so the $r$ value improves each 5 years by a fixed amount?"
+
+"Q7) Suppose they are willing to spend money on reducing fertilizer, OR to spend money of expandng the pond so K is bigger. If I find out the costs of these interventions, can you tell me which would reduce the extinction risk the most?"
+
+"Q8) Does it matter for extinction risk whether an intervention happens now or in 5 years or in 10 years?"
+
+As you hear these questions a dark cloud covers your mental state. Not revisions again!
+
+_Modularity lesson 3:_ Code rewrites are a fact of life. You expect to repeatedly revise your writing, why not your code? Get over the despiritedness and get on with the revisions! I mean, not revising your code when it needs it is just a bad as refusing to revise or edit a paper when you realize the writing is not as good as it can be! But next time, if you pay attention to extensibility and modularity, rewrites and edits to your code will be a lot easier! 
+
+_Discuss with neighbor:_ Speak with your neighbor for a few minutes: how could you patch up the code we have so far to implement functionality that would answer at least one of these? Will it be easy? Is there a better way?
+
+# The modular approach, step 1: deciding on the modules and their interfaces
+
+Let's think about this in a modular, task-based way. What tasks need to be done?
+
+* Simulate the population multiple times, keeping all time steps for all populations
+* Make a plot showing some or all of the populations
+* Calculate estinction risk at any point in the future, or any several points.
+
+How about we have one function for each of these tasks? Let's think about the _interface_ between our modules (in this case the modules are functions). 
+
+_Modularity lesson 4:_ A crucial early step in a modular aproach is deciding on the interfaces of your modules. "Interface" means what your module requires as input, and how it will get it, and what it gives as output, and how it will provide it. The interface needs to be specified _precisely_ (i.e., it admits exactly one interpretation) and with _thoroughness_. 
+
+Note, specifying the modules and their interfaces also makes it easier to spread the work out across more than one worker - each one can take one or a few modules. As long as everyone is clear on the interfaces, this will work, but not otherwise.
+
+## Interface for module 1 
+
+This is the module (a function, in this case) that simulates the population many times and provides all resulting population time series.
+
+Inputs (arguments to the function):
+
+* p0: the starting population, a single number
+* r, K, nsd: model parameters, nsd the standard deviation of the noise
+* numsims: the number of simulations to do
+* numsteps: the number of time steps to do
+
+Output: 
+
+* A numsims by numsteps+1 matrix with each row a population time series from a different simulation
+* The first entry in each row is p0
+
+## Alternative interface for module 1
+
+Inputs (arguments to the function):
+
+* p0: a vector of starting populations length equals the numer of simulations you want to do
+* r, K, nsd: model parameters, nsd the standard deviation of the noise
+* numsteps: the number of time steps to do
+
+Why might we do this instead of the first option? Why might we do the first option? Which do you think is better?
+
+## Interface for module 2
+
+This is the module (a function, in this case) that makes a plot showing some or all of the populations.
+
+Inputs (arguments to the function):
+
+* m: A numsims by numsteps+1 matrix with each row a population time series from a different simulation
+* pts: A vector of which time series to plot. Default NA means plot them all.
+* logxp1: A T/F variable indicating whether to plot on log(x+1)-scale
+
+Note the first input is exactly the output of the first module! 
+
+Output: none, but there is the "side effect" of the plot. This is technically called a "side effect" even though it can be (and is, in this case) the main purpose for the code.
+
+## Interface for module 3
+
+This is the module that calculates estinction risk at any point in the future, or any several points.
+
+Inputs:
+
+* m: A numsims by numsteps+1 matrix with each row a population time series from a different simulation
+* risktimes: A vector of indices in the range 1 to dim(m)[2] the corresponding times at which extinction risks are given
+
+Note, again the first input is the same format as the output from module 1.
+
+Output:
+
+* A vector of the same length as risktimes containing the extinction risks
+
+## Alternative interface for module 3
+
+Everything is the same except risktimes, which instead of having entries corresponding to columns of m, has entries corresponding to times. 
+
+There is a difference of 1 here. You should choose whatever seems natural in a case like this. But it is important that you be this precise in your interface specification, particularly if you want your module to play well with modules other people have written. 
+
+# The modular approach step 2: function specifications
+
+```{r eval=F}
+#A function for doing the population simulations for our endangered salamander.
+#
+#Args
+#p0: a vector of starting populations length equals the numer of simulations you 
+#want to do
+#r, K, nsd: model parameters, nsd the standard deviation of the noise
+#numsteps: the number of time steps to do
+#
+#Output
+#A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#
+popsim<-function(p0,r,K,nsd,numsteps)
+{
+  #fill in
+  return(pops)  
+}
+```
+
+```{r eval=F}
+#A ploter function for plotting the sims from popsim.
+#
+#m: A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#pts: A vector of which time series to plot. Default is plot them all.
+#logxp1: A T/F variable indicating whether to plot on log(x+1)-scale
+#
+#Output: none, but there is a "side effect" which is the plot. 
+#
+plotter<-function(m,pts=1:dim(m)[1],logxp1=T)
+{
+  #fill in  
+}
+```
+
+```{r eval=F}
+#A function for calculating extinction risks after simulating a population many 
+#times.
+#
+#Args
+#m: A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#risktimes: A vector of indices in the range 1 to dim(m)[2]-1 which are the times 
+#at which extinction risks are given. We assume the first column of m has the 
+#initial population.
+#
+#Output:
+#A vector of the same length as risktimes containing the extinction risks
+#
+extrisks<-function(m, risktimes)
+{
+  #fill in
+  return(risks)  
+}
+```
+
+Note the interface description we took the time to write down now appears almost verbatim as the commetary at the top of our code which is necessary to understand how to use it. It may have seemed like a waste of time to be this precise before, but this is one way it pays off - later steps are easier. If you turn this into an R package there are ways to (easily) make this sort of text convert into the R help files that one needs to write for a package.
+
+# The modular approach step 3: psuedocode
+
+```{r eval=F}
+#A function for doing the population simulations for our endangered salamander.
+#
+#Args
+#p0: a vector of starting populations length equals the numer of simulations you 
+#want to do
+#r, K, nsd: model parameters, nsd the standard deviation of the noise
+#numsteps: the number of time steps to do
+#
+#Output
+#A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#
+popsim<-function(p0,r,K,nsd,numsteps)
+{
+  res<-#initialize variable for pops, numsims by numsteps+1, p0 in first column
+  for (tcount in 1:numsteps)
+  {
+    #advance all the pops according to the formula
+  }
+  
+  return(pops)  
+}
+```
+
+```{r eval=F}
+#A ploter function for plotting the sims from popsim.
+#
+#m: A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#pts: A vector of which time series to plot. Default is plot them all.
+#logxp1: A T/F variable indicating whether to plot on log(x+1)-scale
+#
+#Output: none, but there is a "side effect" which is the plot. 
+#
+plotter<-function(m,pts=1:dim(m)[1],logxp1=T)
+{
+  #keep only the rows of m indicated with pts
+  
+  #log(x+1) transform if desired
+  
+  #plot
+}
+```
+
+```{r eval=F}
+#A function for calculating extinction risks after simulating a population many 
+#times.
+#
+#Args
+#m: A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#risktimes: A vector of indices in the range 1 to dim(m)[2]-1 which are the times 
+#at which extinction risks are given. We assume the first column of m has the 
+#initial population.
+#
+#Output:
+#A vector of the same length as risktimes containing the extinction risks
+#
+extrisks<-function(m,risktimes)
+{
+  #keep only the columns of m that correspond to the times at which risk is needed
+  
+  #calculate risks 
+  
+  return(risks)  
+}
+```
+
+_Modularity lesson 5:_ Modularity requires patience, and some faith in the process. You have to plan now, and invest time now, to save time later. It is tempting to just jump right into coding, just as it is tempting for new writers to just start writing without outlining or other planning of the structure of what they will write. Resist the temptation! You should see the benefits in this example by the time we are done, hopefully that will make it easier to resist the temptation. 
+
+# Crucially important viewpoint on functions
+
+_Here is an ironclad rule that everyone but expert programmers should follow:_ Functions should never use, modify, or even mention or acknowledge the existance of any variable that was not passed into the function or created within the function. The function should be considered a universe unto itself for variables. 
+
+The one exception in my way of doing things is other functions, which may be used (called) within a function even when they were not passed into that function. 
+
+This is crucial to the modularization viewpoint! Without this, the functions are not really modules (i.e., tasks that can be regarded as separate from the other tasks except as specified in the interface).
+
+The interface decisions you make are supposed to completely specify how your modules relate to each other. If you are using functions for your modules, and your functions make use of so-called global variables, then you are violating the interface decisions and risking bugs.
+
+R gives you enough rope to hang yourself here. That is to acommodate the experts. 
+
+Please do NOT use global variables in this course, even if you regard yourself as an "expert." (But in that case, why are you taking this course?) You have to know a rule very well before you know how to safely and constructively break it, and the best way to know it is to follow the rule for a period of years and then only break it with trepedation. 
+
+# The modular approach step 4: code
+
+```{r}
+#A function for doing the population simulations for our endangered salamander.
+#
+#Args
+#p0: a vector of starting populations length equals the numer of simulations you 
+#want to do
+#r, K, nsd: model parameters, nsd the standard deviation of the noise
+#numsteps: the number of time steps to do
+#
+#Output
+#A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#
+popsim<-function(p0,r,K,nsd,numsteps)
+{
+  res<-matrix(NA,length(p0),numsteps+1)
+  res[,1]<-p0  
+  for (tcount in 1:numsteps)
+  {
+    res[,tcount+1]<-res[,tcount]*exp(r*(1-res[,tcount]/K)+rnorm(length(p0),0,nsd))  
+    res[res[,tcount+1]<1,tcount+1]<-0
+  }
+  
+  return(res)  
+}
+```
+
+Important aside on vectorization: Recall that the following give the same result:
+
+```{r}
+x<-c(1,2,3,4,5)
+y<-c(6,7,8,9,10)
+z<-NA*numeric(length(x))
+for (counter in 1:length(x))
+{
+  z[counter]<-x[counter]*y[counter]
+}
+z
+```
+
+And
+
+```{r}
+z<-x*y
+z
+```
+
+Not only is the latter chunk a lot syntactically simpler, it is also a lot faster. This does not matter much for multiplying vectors of length 5, but it will matter with bigger datasets quite a lot.  
+
+The formula in the `popsim` function relies heavily on vectorization. How? 
+```{r eval=F}
+res[,tcount+1]<-res[,tcount]*exp(r*(1-res[,tcount]/K)+rnorm(length(p0),0,nsd))
+```
+
+Now continue with code for `plotter` and `extrisks`
+
+```{r}
+#A ploter function for plotting the sims from popsim.
+#
+#m: A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#pts: A vector of which time series to plot. Default is plot them all.
+#logxp1: A T/F variable indicating whether to plot on log(x+1)-scale. Log base 
+#10 used.
+#
+#Output: none, but there is a "side effect" which is the plot. 
+#
+plotter<-function(m,pts=1:dim(m)[1],logxp1=T)
+{
+  #keep only the rows of m indicated with pts
+  m<-m[pts,,drop=F]
+  
+  #log(x+1) transform if desired
+  if (logxp1)
+  {
+    m<-log10(m+1)
+  }
+  
+  #plot
+  plot(0:(dim(m)[2]-1),m[1,],type='n',xlab="Time step",ylab="Population",
+       ylim=c(0,max(m)))
+  for (rcounter in 2:(dim(m)[1]))
+  {
+    lines(0:(dim(m)[2]-1),m[rcounter,],type='l')
+  }
+}
+```
+
+```{r}
+#A function for calculating extinction risks after simulating a population many 
+#times.
+#
+#Args
+#m: A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#risktimes: A vector of indices in the range 1 to dim(m)[2]-1 which are the times 
+#at which extinction risks are given. We assume the first column of m has the 
+#initial population, taken to be time 0.
+#
+#Output:
+#A vector of the same length as risktimes containing the extinction risks
+#
+extrisks<-function(m,risktimes)
+{
+  #keep only the columns of m that correspond to the times at which risk is needed
+  m<-m[,risktimes+1,drop=F]
+  
+  #calculate risks 
+  risks<-apply(FUN=sum,X=(m==0),MARGIN=2)/(dim(m)[1])
+  
+  return(risks)  
+}
+```
+
+Suppose you later decide a threshold other than 1 should be used for extinction, will the change be easy to make?
+
+# The modular approach step 5: testing
+
+This is called unit testing.
+
+Some people put this before step 4, i.e., they advocate planning and even writing testing code for the modules before coding up the modules themselves. I can see advantages to both ways, depending on the circumstances, but in any case, we are leaving unit testing to later in the course so we will skip this step now. 
+
+# Now let's return to the questions about the salamander - can we answer them?
+
+Q1) Chances the salamander will go extinct within $25$ years.
+
+```{r}
+sims<-popsim(p0=rep(52,10000),r=1.01,K=60,nsd=2,numsteps=25)
+extrisks(m=sims,risktimes=25)
+```
+
+Q2-3) Plot illustrating this, showing only some of the simulations, $log(x+1)$ scale.
+
+```{r}
+plotter(m=sims,pts=1:100,logxp1=T)
+```
+
+Q4) You told me the extinction risk at 25 years, but what is it at 10, 15, 20 years? Can you make a plot for me showing extinction risk as a function of number of years in the future?
+
+```{r}
+extrisks(m=sims,risktimes=c(10,15,20,25))
+allrisks<-extrisks(m=sims,risktimes=0:25)
+plot(0:25,allrisks,type='l',xlab='Time (years)',ylab='Extinction risk')
+```
+
+Note that the extinction risk is already at about 50% in 5 years, which provides information relevant to the next question, to some extent.
+
+Q5) What would happen if, 5 years from now, I can get the land owners to agree to stop letting fertilizer spill into the pond, I think that will make $r$ go to $1.03$ from that point forward."
+
+```{r}
+sims1<-popsim(p0=rep(52,10000),r=1.01,K=60,nsd=2,numsteps=5)
+sims2<-popsim(p0=sims1[,dim(sims1)[2]],r=1.03,K=60,nsd=2,numsteps=20)
+sims<-cbind(sims1,sims2[,2:dim(sims2)[2]])
+extrisks(m=sims,risktimes=25)
+allrisks<-extrisks(m=sims,risktimes=0:25)
+plot(0:25,allrisks,type='l',xlab='Time (years)',ylab='Extinction risk')
+```
+
+That does not really make much difference.
+
+Follow-up question: What if $r$ goes to 1.05?
+
+```{r}
+sims1<-popsim(p0=rep(52,10000),r=1.01,K=60,nsd=2,numsteps=5)
+sims2<-popsim(p0=sims1[,dim(sims1)[2]],r=1.05,K=60,nsd=2,numsteps=20)
+sims<-cbind(sims1,sims2[,2:dim(sims2)[2]])
+extrisks(m=sims,risktimes=25)
+allrisks<-extrisks(m=sims,risktimes=0:25)
+plot(0:25,allrisks,type='l',xlab='Time (years)',ylab='Extinction risk')
+```
+
+Follow-up question: What if $r$ goes to 1.1?
+
+```{r}
+sims1<-popsim(p0=rep(52,10000),r=1.01,K=60,nsd=2,numsteps=5)
+sims2<-popsim(p0=sims1[,dim(sims1)[2]],r=1.1,K=60,nsd=2,numsteps=20)
+sims<-cbind(sims1,sims2[,2:dim(sims2)[2]])
+extrisks(m=sims,risktimes=25)
+allrisks<-extrisks(m=sims,risktimes=0:25)
+plot(0:25,allrisks,type='l',xlab='Time (years)',ylab='Extinction risk')
+```
+
+Also no better.
+
+Q6) What if I can gradually get them to reduce their fertilizer use every 5 years so the $r$ value improves each 5 years by a fixed amount?
+
+How would you do this given the functions we have developed?
+
+Q7) Suppose they are willing to spend money on reducing fertilizer, OR to spend money of expandng the pond so K is bigger. If I find out the costs of these interventions, can you tell me which would reduce the extinction risk the most?
+
+Well, we need to know the costs to be sure, but we can experiment with increasing K.
+
+```{r}
+sims<-popsim(p0=rep(52,10000),r=1.01,K=80,nsd=2,numsteps=25)
+extrisks(m=sims,risktimes=25)
+sims<-popsim(p0=rep(52,10000),r=1.01,K=150,nsd=2,numsteps=25)
+extrisks(m=sims,risktimes=25)
+sims<-popsim(p0=rep(52,10000),r=1.01,K=250,nsd=2,numsteps=25)
+extrisks(m=sims,risktimes=25)
+```
+
+Well, this helps a bit, certainly, but the risk is still really high.
+
+What if we managed to reduce the effects of winter?
+
+```{r}
+sims<-popsim(p0=rep(52,10000),r=1.01,K=60,nsd=1.5,numsteps=25)
+extrisks(m=sims,risktimes=25)
+sims<-popsim(p0=rep(52,10000),r=1.01,K=60,nsd=1,numsteps=25)
+extrisks(m=sims,risktimes=25)
+sims<-popsim(p0=rep(52,10000),r=1.01,K=60,nsd=0.5,numsteps=25)
+extrisks(m=sims,risktimes=25)
+```
+
+This seems promising, though we would need to do more exploring (and that's facilitated by the code we have developed) and also think about whether it is even possible to reducuce the variability of the effects of winter.
+
+Q8) Does it matter for extinction risk whether an intervention happens now or in 5 years or in 10 years?
+
+I think we have already answered this to some extent by observing that within 5 years the extinction risk is 50% under the status quo. But could you add detail with the functions we have? How?
+
+Anyway, the actual answers to the questions about the salamander don't matter because this is a made up example. The point is, having taken a solid, modular approach, we can answer the original questions, and many others, easily. 
+
+# A final example of extensibility through modularity - advanced/challenge section 
+
+Suppose your friend changes his mind and now thinks the original Ricker model is no good and wants instead to use a different model. Would this be an easy change? 
+
+What if he become unsure of the model, and wants to try a variety of models? This is quite common.   
+First, note that we should not have to change our plotter and extinction risk functions no matter how much and how often we change the simulation model! This is a major benefit of modularity!
+
+One way to handle alternative models would be to write alternative `popsim` functions:
+
+```{r}
+#A function for doing the population simulations for our endangered salamander 
+#using a stochastic version of the Ricker model.
+#
+#Args
+#p0: a vector of starting populations length equals the numer of simulations you 
+#want to do
+#r, K, nsd: model parameters, nsd the standard deviation of the noise
+#numsteps: the number of time steps to do
+#
+#Output
+#A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#
+popsim1<-function(p0,r,K,nsd,numsteps)
+{
+  res<-matrix(NA,length(p0),numsteps+1)
+  res[,1]<-p0  
+  for (tcount in 1:numsteps)
+  {
+    res[,tcount+1]<-res[,tcount]*exp(r*(1-res[,tcount]/K)+rnorm(length(p0),0,nsd))  
+    res[res[,tcount+1]<1,tcount+1]<-0
+  }
+  
+  return(res)  
+}
+```
+
+```{r}
+#A function for doing the population simulations for our endangered salamander 
+#using a stochastic version of the Beverton-Holt model.
+#
+#Args
+#p0: a vector of starting populations length equals the numer of simulations you 
+#want to do
+#r, K, nsd: model parameters, nsd the standard deviation of the noise
+#numsteps: the number of time steps to do
+#
+#Output
+#A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#
+popsim2<-function(p0,r,K,nsd,numsteps)
+{
+  res<-matrix(NA,length(p0),numsteps+1)
+  res[,1]<-p0  
+  for (tcount in 1:numsteps)
+  {
+    res[,tcount+1]<-(r+rnorm(length(p0),0,nsd))*res[,tcount]/(1+res[,tcount]/K)
+    res[res[,tcount+1]<1,tcount+1]<-0
+  }
+  
+  return(res)  
+}
+```
+
+Note that only a few lines are different between `popsim1` and `popsim2`, which means it would be pretty easy to extend the analysis to as many models as we wanted. However, this also points up the possibility for further modularization, because much of the code in the two functions is the same.
+
+_Modularity lesson 6:_ Whenever you see multiple lines of code that are the same in more than one location, that is a good clue that it _may_ be beneficial to apply the concepts of modularity.
+
+Suppose we reconceptualize our interface for `popsim`:
+
+Inputs (arguments to a new version of the function):
+
+* p0: a vector of starting populations length equals the numer of simulations you want to do
+* params: a named vector of parameters for the model you will run, names are the parameter names, values are their values
+* osf: A "one-step function", i.e., a function with two arguments. First, a vector, called `pt` of populations, and second a named vector of parameters (same format as params above), again called `params`. Gives the populations at the next time step in a vector of the same length as `pt`. 
+* numsteps: the number of time steps to do
+
+Outputs the same as before.
+
+The "one-step function" specifies the model to be used, and that is all it does. All the looping that carries out the simulation of the model is handled by the new version of `popsim`. Thus we have separated specifying the model from doing the looping necessary to simulate it, and so we have greater modularity than we did before. It will be easier to implement multiple models, and will involve less repeated code since the looping code is no longer going to be repeated.
+
+Note: we are using the fact that, in R, you can pass a function as an argument to another function.
+
+```{r}
+#A function for doing the population simulations for our endangered salamander 
+#using any specified model (specified by a "one-step function", see the 
+#osf argument below).
+#
+#Args
+#p0: a vector of starting populations length equals the numer of simulations you 
+#want to do
+#params: a named vector of parameters for the model you will run, names are 
+#the parameter names, values are their values
+#osf: A "one-step function", i.e., a function with two arguments. First, a vector 
+#of populations, and second a named vector of parameters (same format as 
+#params above). Gives the populations at the next time step. 
+#numsteps: the number of time steps to do
+#
+#Output
+#A numsims by numsteps+1 matrix with each row a population time series from a 
+#different simulation
+#
+popsim<-function(p0,osf,params,numsteps)
+{
+  res<-matrix(NA,length(p0),numsteps+1)
+  res[,1]<-p0  
+  for (tcount in 1:numsteps)
+  {
+    res[,tcount+1]<-osf(pt=res[,tcount],params=params)
+    res[res[,tcount+1]<1,tcount+1]<-0
+  }
+  
+  return(res)  
+}
+```
+
+Note this is quite similar to previous versions of `popsim` but the one-stepper is used instead of directly using the formula itself.
+
+```{r}
+#Ricker one-step function.
+#
+#Args
+#pt: A vector of populations at time t
+#params: A named vector with entries named r, K, nsd for the growth rate, 
+#carrying capacity, and noise standard deviation under a stochastic version of 
+#the Ricker model. If you do not use the right names, this won't work.
+#
+#Output
+#A vector of populations of the same length as pt, #for the next time step
+#
+RickerOSF<-function(pt,params)
+{
+  r<-params['r']
+  K<-params['K']
+  nsd<-params['nsd']
+  return(pt*exp(r*(1-pt/K)+rnorm(length(pt),0,nsd)))  
+}
+```
+
+Note how important it is to have decided in advance, as part of the "interface" step, the exact input-output structure allowed for a one-step function. If we write a one-step function that, say, has arguments called `pn` and `para` instead of `pt` and `params` it won't work even if these represent the same things as `pt` and `params`. 
+
+```{r}
+#Beverton-Holt one-step function.
+#
+#Args
+#pt: A vector of populations at time t
+#params: A named vector with entries named r, K, nsd for the growth rate, 
+#carrying capacity, and noise standard deviation under a stochastic version 
+#of the Beverton-Holt model. You HAVE to use these names.
+#
+#Output
+#A vector of populations of the same length as pt, #for the next time step
+#
+BevHoltOSF<-function(pt,params)
+{
+  r<-params['r']
+  K<-params['K']
+  nsd<-params['nsd']
+  return((r+rnorm(length(pt),0,nsd))*pt/(1+pt/K))
+}
+```
+
+Now use the new code:
+
+```{r}
+Rsims<-popsim(p0=rep(52,10000),osf=RickerOSF,params=c(r=1.01,K=60,nsd=2),
+numsteps=25)
+BHsims<-popsim(p0=rep(52,10000),osf=BevHoltOSF,params=c(r=1.01,K=60,nsd=2),
+numsteps=25)
+extrisks(m=Rsims,risktimes=25)
+extrisks(m=BHsims,risktimes=25)
+```
+
+So perhaps it matters which model is more acurate, though the outlook is grim one way or the other in this example.
